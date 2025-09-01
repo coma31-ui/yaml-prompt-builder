@@ -73,91 +73,51 @@ export default function Page() {
   const isLandscape = mode==='風景'; const isPortrait = mode==='人物'; const isBoth = mode==='人物+風景';
   useEffect(()=>{ if (isLandscape) { setLens('35mm'); setAperture('f8_0'); setDepth('深い被写界深度'); }}, [mode]);
 
-  const yaml = useMemo(()=>{
-    const subjectBlock = (isPortrait || isBoth) ? subjects.map(s => ({
-      description: s.description || undefined,
-      gender: (dict as any).gender[s.gender],
-      age: (dict as any).age[s.age],
-      clothing: s.clothing || undefined,
-      accessories: s.accessories || undefined,
-      emphasis: s.emphasis || undefined,
-    })) : undefined;
+ // 追加: 英語自然文に変換する関数
+function buildEnglishPrompt(data:any): string {
+  let lines: string[] = [];
 
-    const sceneBlock = (isLandscape || isBoth) ? {
-      description: sceneDesc || undefined,
-      location: sceneLocation || undefined,
-      emphasis: sceneEmphasis || undefined,
-    } : undefined;
+  if (data.subject?.description) {
+    lines.push(`Subject: ${data.subject.description}${data.subject.location ? " in " + data.subject.location : ""}.`);
+  }
 
-    const cameraBlock:any = {
-      type: cameraType === '一眼レフカメラ' ? 'DSLR' : 'mirrorless',
-      lens: `${(dict as any).lens[lens]} ${(dict as any).aperture[aperture]}`.trim(),
-      settings: { aperture: (dict as any).aperture[aperture], shutter: shutter.replace('秒','s'), iso }
-    };
+  if (data.style) lines.push(`Style: ${data.style}.`);
 
-    const compositionBlock:any = {
-      framing: composition.map(c=>(dict as any).composition[c]).filter(Boolean).join(', ') || undefined,
-      depth: (dict as any).depth[depth],
-      perspective: (dict as any).perspective[perspective],
-    };
+  if (data.camera) {
+    lines.push(`Camera: ${data.camera.type}, Lens: ${data.camera.lens}.`);
+    if (data.camera.settings) {
+      const s = data.camera.settings;
+      lines.push(`Settings: aperture ${s.aperture}, shutter ${s.shutter}, ISO ${s.iso}.`);
+    }
+  }
 
-    const lightingBlock:any = {
-      type: (dict as any).lightingType[ltType],
-      color_temperature: `${kelvin}K`,
-      description: ltType === '日中の自然光' ? 'bright and refreshing midday sunlight, soft shadows' : undefined,
-      direction: (dict as any).lightDir[ltDir],
-    };
+  if (data.composition) {
+    if (data.composition.framing) lines.push(`Composition: ${data.composition.framing}.`);
+    if (data.composition.depth) lines.push(`Depth: ${data.composition.depth}.`);
+    if (data.composition.perspective) lines.push(`Perspective: ${data.composition.perspective}.`);
+  }
 
-    const focusText = (dict as any).focus[focusSel];
+  if (data.focus) {
+    if (data.focus.method) lines.push(`Focus: ${data.focus.method}.`);
+    if (data.focus.emphasis) lines.push(`Emphasis: ${data.focus.emphasis}.`);
+  }
 
-    const obj:any = {
-      output: {
-        orientation: (dict as any).orientation[orientation] || 'square',
-        aspect_ratio: deriveAspect(ratioBase, orientation),
-      },
-      prompt: {
-        mode: (dict as any).mode[mode],
-        ...(subjectBlock ? { subject: subjectBlock } : {}),
-        ...(sceneBlock ? { scene: sceneBlock } : {}),
-        style: `${(dict as any).style[style]} photography, natural lighting`,
-        camera: cameraBlock,
-        composition: compositionBlock,
-        focus: focusText,
-        lighting: lightingBlock,
-        mood: style==='シネマティック' ? 'natural, refined, cinematic atmosphere' : undefined,
-        postprocessing: {
-          color: postColor ? 'natural color grading, cinematic tones' : undefined,
-          sharpness: postSharp ? 'high detail, crisp focus' : undefined,
-          noise: postNoise ? 'low noise, clean image' : undefined,
-          finish: postFinish ? 'magazine editorial quality' : undefined,
-        },
-      },
-      negative_prompt: negatives.map(n=>(dict as any).neg[n]).filter(Boolean),
-    };
+  if (data.lighting) {
+    let l = `Lighting: ${data.lighting.type}`;
+    if (data.lighting.color_temperature) l += `, ${data.lighting.color_temperature}K`;
+    if (data.lighting.direction) l += `, ${data.lighting.direction}`;
+    lines.push(l + ".");
+    if (data.lighting.description) lines.push(data.lighting.description + ".");
+  }
 
-    const indent = (n:number)=>' '.repeat(n);
-    const dump = (k:any,v:any,lv=0):string => {
-      const key = typeof k==='string'? k: String(k);
-      if (v===undefined || v===null || v==='') return '';
-      if (Array.isArray(v)) {
-        if (!v.length) return '';
-        const items = v.map(x=> typeof x==='object'? dump('-',x,lv+2) : `${indent(lv+2)}- ${x}\n`).join('');
-        return `${indent(lv)}${key}:\n${items}`;
-      }
-      if (typeof v==='object') {
-        const entries = Object.entries(v).filter(([,vv])=> vv!==undefined && vv!==null && vv!=='');
-        if (!entries.length) return '';
-        return `${indent(lv)}${key}:\n` + entries.map(([kk,vv])=> dump(kk,vv,lv+2)).join('');
-      }
-      return `${indent(lv)}${key}: ${String(v)}\n`;
-    };
+  if (data.mood) lines.push(`Mood: ${data.mood}.`);
 
-    let out='';
-    out += dump('output', obj.output, 0);
-    out += dump('prompt', obj.prompt, 0);
-    out += dump('negative_prompt', obj.negative_prompt, 0);
-    return out.trim();
-  }, [mode, subjects, sceneDesc, sceneLocation, sceneEmphasis, cameraType, lens, aperture, shutter, iso, composition, perspective, depth, ltType, ltDir, kelvin, style, postColor, postSharp, postNoise, postFinish, negatives, focusSel, orientation, ratioBase]);
+  if (data.postprocessing) {
+    lines.push(`Post-processing: ${Object.values(data.postprocessing).join(", ")}.`);
+  }
+
+  return lines.join("\n");
+}
 
   return (
     <div className="min-h-screen p-8 max-w-5xl mx-auto space-y-6">
